@@ -1,0 +1,255 @@
+import base64
+import os
+from datetime import datetime
+
+import numpy as np
+import pandas as pd
+import requests
+from dotenv import load_dotenv
+from google.cloud import bigquery
+
+load_dotenv()
+
+PROJECT_ID     = os.getenv("GCP_PROJECT_ID")
+DATASET_SILVER = os.getenv("BQ_DATASET_SILVER", "buriti_marketing_silver")
+TABELA_SILVER  = "publya_campanhas"
+
+if not PROJECT_ID:
+    raise ValueError("GCP_PROJECT_ID não encontrado no .env ou nas variáveis de ambiente")
+
+CONTAS = [
+    {
+        "client_id": os.getenv("PUBLYA_CLIENT_ID_1"),
+        "token":     os.getenv("PUBLYA_TOKEN_1"),
+        "email":     os.getenv("PUBLYA_EMAIL_1"),
+    },
+    {
+        "client_id": os.getenv("PUBLYA_CLIENT_ID_2"),
+        "token":     os.getenv("PUBLYA_TOKEN_2"),
+        "email":     os.getenv("PUBLYA_EMAIL_2"),
+    },
+]
+
+METRIC_COLS = [
+    "budget", "impressions", "clicks", "ctr", "cpc", "cpm",
+    "reach", "cpma", "frequency", "viewability", "conversions",
+    "vcr", "cpv", "videoStarts", "video25Completions", "video50Completions",
+    "video75Completions", "videoCompletions", "trueViews", "trueViewsRate",
+    "audioStarts", "audio25Completions", "audio50Completions",
+    "audio75Completions", "audioCompletions", "acr", "ecpcl", "cpa",
+]
+
+COLUNAS_REMOVER = [
+    "video25Completions", "video50Completions", "video75Completions",
+    "audio25Completions", "audio50Completions", "audio75Completions",
+    "trueViews", "trueViewsRate",
+    "ctr", "cpc", "cpm", "cpma",
+    "viewability", "cpv", "vcr", "ecpcl", "cpa",
+    "platform", "acr", "client_id",
+]
+
+client = bigquery.Client(project=PROJECT_ID)
+
+
+# ── Autenticação ──────────────────────────────────────────────────────────────
+
+def criar_headers(token: str, client_id: str, email: str) -> dict:
+    user_data_b64 = base64.b64encode(f"{client_id}:{email}".encode()).decode()
+    return {
+        "Authorization": f"Bearer {token}",
+        "User-Data":     user_data_b64,
+        "Content-Type":  "application/json",
+    }
+
+
+# ── Extração ──────────────────────────────────────────────────────────────────
+
+def extrair_campanhas(headers: dict, pagina: int = 1, itens_por_pagina: int = 20) -> list:
+    url  = "https://api.publya.com/kermit/leap/reports/external/campaigns"
+    resp = requests.get(url, headers=headers, params={"page": pagina, "itemsPerPage": itens_por_pagina})
+
+    if resp.status_code == 200:
+        items = resp.json()["items"]
+        print(f"  {len(items)} campanhas listadas")
+        return items
+    elif resp.status_code == 401:
+        print("  Erro 401: verifique token ou User-Data")
+    else:
+        print(f"  Erro {resp.status_code} ao listar campanhas")
+    return []
+
+
+def consultar_detalhe(campanha_id: str, headers: dict) -> dict | None:
+    url  = f"https://api.publya.com/kermit/leap/reports/external/campaigns/{campanha_id}"
+    resp = requests.get(url, headers=headers)
+
+    if resp.status_code == 200:
+        return resp.json()
+    elif resp.status_code in (404, 501):
+        print(f"  ID {campanha_id}: rota não implementada")
+    else:
+        print(f"  ID {campanha_id}: erro {resp.status_code}")
+    return None
+
+
+def coletar_dados_conta(conta: dict) -> list[dict]:
+    headers   = criar_headers(conta["token"], conta["client_id"], conta["email"])
+    campanhas = extrair_campanhas(headers)
+    resultado = []
+
+    for camp in campanhas:
+        cid   = camp["id"]
+        cname = camp.get("name", f"Campanha {cid}")
+        cplat = camp.get("platform", "")
+
+        print(f"  -> [{cid}] {cname}")
+        detalhe = consultar_detalhe(cid, headers)
+        if detalhe is None:
+            continue
+
+        resultado.append({
+            "client_id":     conta["client_id"],
+            "campaign_id":   cid,
+            "campaign_name": cname,
+            "platform":      cplat,
+            **(detalhe if isinstance(detalhe, dict) else {}),
+        })
+
+    print(f"  {len(resultado)} campanhas coletadas (client_id={conta['client_id']})")
+    return resultado
+
+
+# ── Transformação ─────────────────────────────────────────────────────────────
+
+def tabular_metricas(data: list[dict]) -> pd.DataFrame:
+    rows = []
+    for item in data:
+        metrics = item.get("metrics", {})
+        rows.append({
+            "client_id":     item.get("client_id", ""),
+            "campaign_id":   item["campaign_id"],
+            "campaign_name": item["campaign_name"],
+            "platform":      item.get("platform", ""),
+            **{col: metrics.get(col, 0) for col in METRIC_COLS},
+        })
+    return pd.DataFrame(rows)
+
+
+def preparar_silver(data: list[dict]) -> pd.DataFrame:
+    df = tabular_metricas(data)
+
+    for col in METRIC_COLS:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    df["Tipo_Midia"] = np.where(
+        df["videoStarts"] != 0, "Vídeo",
+        np.where(df["audioStarts"] != 0, "Áudio", "Display")
+    )
+
+    df["campaign_id"]   = df["campaign_id"].astype(str)
+    df["campaign_name"] = df["campaign_name"].astype(str)
+    df["data_carga"]    = datetime.now()
+    df["origem_fonte"]  = "PUBLYA_API"
+
+    df = df.drop(columns=[c for c in COLUNAS_REMOVER if c in df.columns])
+
+    return df
+
+
+# ── Carga ─────────────────────────────────────────────────────────────────────
+
+def garantir_dataset(dataset_id: str, location: str = "US") -> None:
+    dataset_ref = bigquery.Dataset(f"{PROJECT_ID}.{dataset_id}")
+    dataset_ref.location = location
+    client.create_dataset(dataset_ref, exists_ok=True)
+    print(f"  Dataset pronto: {dataset_id}")
+
+
+def carregar_bigquery(df: pd.DataFrame, dataset_id: str, table_id: str, modo: str = "WRITE_TRUNCATE") -> None:
+    table_full = f"{PROJECT_ID}.{dataset_id}.{table_id}"
+    job_config = bigquery.LoadJobConfig(write_disposition=modo, autodetect=True)
+    job = client.load_table_from_dataframe(df, table_full, job_config=job_config)
+    job.result()
+    print(f"  Carga concluída: {table_full} ({len(df)} linhas)")
+
+
+def carregar_com_staging(df: pd.DataFrame, dataset_id: str, table_id: str) -> None:
+    """
+    Carrega via staging + MERGE para proteger a tabela final.
+
+    Fluxo:
+      1. Sobe os dados em uma tabela staging (WRITE_TRUNCATE).
+         Se falhar aqui, a tabela final não é tocada.
+      2. Executa MERGE: atualiza campanhas existentes, insere novas.
+      3. Apaga a tabela staging.
+    """
+    staging_id = f"{table_id}_staging"
+
+    print(f"  Carregando staging ({staging_id})...")
+    carregar_bigquery(df, dataset_id, staging_id, modo="WRITE_TRUNCATE")
+
+    merge_sql = f"""
+        MERGE `{PROJECT_ID}.{dataset_id}.{table_id}` T
+        USING `{PROJECT_ID}.{dataset_id}.{staging_id}` S
+        ON T.campaign_id = S.campaign_id AND T.Tipo_Midia = S.Tipo_Midia
+        WHEN MATCHED THEN UPDATE SET
+            campaign_name    = S.campaign_name,
+            impressions      = S.impressions,
+            clicks           = S.clicks,
+            budget           = S.budget,
+            reach            = S.reach,
+            frequency        = S.frequency,
+            conversions      = S.conversions,
+            videoStarts      = S.videoStarts,
+            videoCompletions = S.videoCompletions,
+            audioStarts      = S.audioStarts,
+            audioCompletions = S.audioCompletions,
+            data_carga       = S.data_carga,
+            origem_fonte     = S.origem_fonte
+        WHEN NOT MATCHED THEN INSERT ROW
+    """
+
+    print("  Executando MERGE na tabela final...")
+    client.query(merge_sql).result()
+    print(f"  MERGE concluído: {table_id}")
+
+    client.delete_table(f"{PROJECT_ID}.{dataset_id}.{staging_id}", not_found_ok=True)
+    print(f"  Staging removido: {staging_id}")
+
+
+# ── Execução ──────────────────────────────────────────────────────────────────
+
+def main():
+    todos_os_dados: list[dict] = []
+
+    for conta in CONTAS:
+        if not all([conta["client_id"], conta["token"], conta["email"]]):
+            print(f"  Conta ignorada — variáveis de ambiente incompletas")
+            continue
+
+        print(f"\n{'='*55}")
+        print(f"Coletando client_id={conta['client_id']}")
+        print(f"{'='*55}")
+        todos_os_dados.extend(coletar_dados_conta(conta))
+
+    if not todos_os_dados:
+        print("Nenhum dado coletado. Verifique autenticação.")
+        raise SystemExit(1)
+
+    print(f"\n{len(todos_os_dados)} campanhas no total. Preparando carga...")
+    df_silver = preparar_silver(todos_os_dados)
+
+    print(f"\nPrévia ({len(df_silver)} linhas):")
+    print(df_silver[["campaign_name", "Tipo_Midia", "impressions", "clicks"]].to_string(index=False))
+
+    print("\nGarantindo dataset no BigQuery...")
+    garantir_dataset(DATASET_SILVER)
+
+    print("Carregando SILVER via staging...")
+    carregar_com_staging(df_silver, DATASET_SILVER, TABELA_SILVER)
+
+    print("\nProcesso finalizado.")
+
+
+if __name__ == "__main__":
+    main()

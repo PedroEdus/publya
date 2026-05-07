@@ -1,0 +1,19 @@
+# Credenciais — NUNCA commitar
+.env
+keys/
+dashboard/.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Arquivos de teste / saída local
+*.xlsx
+*.csv
+*.json
+saida*
+info_*
+Untitled*
+[ETL]*

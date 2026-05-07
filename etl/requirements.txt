@@ -1,0 +1,8 @@
+google-cloud-bigquery==3.41.0
+numpy
+pandas==2.3.3
+requests==2.33.1
+python-dotenv==1.2.2
+db-dtypes
+pyarrow
+pandas-gbq
