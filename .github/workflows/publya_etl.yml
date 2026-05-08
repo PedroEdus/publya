@@ -2,7 +2,7 @@ name: Publya ETL → BigQuery
 
 on:
   schedule:
-    - cron: "*/4 * * * *"
+    - cron: "0 11 * * 5"
    
   workflow_dispatch:          # Permite rodar manualmente pelo GitHub
 
