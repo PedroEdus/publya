@@ -46,10 +46,11 @@ campanhas_sel = st.sidebar.multiselect("Campanhas", campanhas_opcoes)
 
 st.sidebar.divider()
 
-col_inicio = df["data_inicio"].dropna()
-col_fim    = df["data_fim"].dropna()
+tem_datas  = "data_inicio" in df.columns and "data_fim" in df.columns
+col_inicio = df["data_inicio"].dropna() if tem_datas else pd.Series(dtype="object")
+col_fim    = df["data_fim"].dropna()    if tem_datas else pd.Series(dtype="object")
 
-if not col_inicio.empty and not col_fim.empty:
+if tem_datas and not col_inicio.empty and not col_fim.empty:
     data_min_global = col_inicio.min().date()
     data_max_global = col_fim.max().date()
 
