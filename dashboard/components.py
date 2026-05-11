@@ -11,12 +11,12 @@ _ASSETS = os.path.join(os.path.dirname(__file__), "assets")
 LOGO_CLARA  = os.path.join(_ASSETS, "logo_preta.png")
 LOGO_ESCURA = os.path.join(_ASSETS, "logo_branca.png")
 
-# Verde principal + variações para tema dark
+# 2 verdes → branco → cinza → preto
 COLOR_MAP = {
     "Display": "#008140",   # verde principal
     "Vídeo":   "#00b359",   # verde claro
-    "Áudio":   "#005c2e",   # verde escuro
-    "Misto":   "#80c0a0",   # verde acinzentado
+    "Áudio":   "#E8E8E8",   # branco
+    "Misto":   "#888888",   # cinza
 }
 
 

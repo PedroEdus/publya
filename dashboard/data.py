@@ -30,14 +30,24 @@ def carregar_campanhas() -> pd.DataFrame:
     query  = f"SELECT * FROM `{PROJECT_ID}.{DATASET}.{TABELA}`"
     df     = client.query(query).to_dataframe()
 
-    # Soma linhas onde campaign_name E Tipo_Midia são iguais
+    # Agrega linhas onde campaign_name E Tipo_Midia são iguais
     cols_soma = [
         "impressions", "clicks", "budget", "reach", "conversions",
         "videoStarts", "videoCompletions", "audioStarts", "audioCompletions", "frequency",
     ]
     cols_soma = [c for c in cols_soma if c in df.columns]
 
-    df = df.groupby(["campaign_name", "Tipo_Midia"], as_index=False)[cols_soma].sum()
+    agg = {col: "sum" for col in cols_soma}
+
+    if "data_inicio" in df.columns:
+        df["data_inicio"] = pd.to_datetime(df["data_inicio"], errors="coerce")
+        agg["data_inicio"] = "min"
+
+    if "data_fim" in df.columns:
+        df["data_fim"] = pd.to_datetime(df["data_fim"], errors="coerce")
+        agg["data_fim"] = "max"
+
+    df = df.groupby(["campaign_name", "Tipo_Midia"], as_index=False).agg(agg)
 
     # Métricas derivadas
     imp = df["impressions"].replace(0, pd.NA)
