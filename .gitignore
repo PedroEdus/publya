@@ -1,5 +1,6 @@
 # Credenciais — NUNCA commitar
 .env
+**/.env
 keys/
 dashboard/.streamlit/secrets.toml
 

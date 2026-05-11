@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 
 from components import (
@@ -41,6 +42,35 @@ tipo_sel = st.sidebar.selectbox("Tipo de mídia", tipos)
 campanhas_opcoes = sorted(df["campaign_name"].dropna().unique().tolist())
 campanhas_sel = st.sidebar.multiselect("Campanhas", campanhas_opcoes)
 
+# ── Filtros de data ───────────────────────────────────────────────────────────
+
+st.sidebar.divider()
+
+col_inicio = df["data_inicio"].dropna()
+col_fim    = df["data_fim"].dropna()
+
+if not col_inicio.empty and not col_fim.empty:
+    data_min_global = col_inicio.min().date()
+    data_max_global = col_fim.max().date()
+
+    data_inicio_sel = st.sidebar.date_input(
+        "Data início (a partir de)",
+        value=data_min_global,
+        min_value=data_min_global,
+        max_value=data_max_global,
+    )
+    data_fim_sel = st.sidebar.date_input(
+        "Data fim (até)",
+        value=data_max_global,
+        min_value=data_min_global,
+        max_value=data_max_global,
+    )
+else:
+    data_inicio_sel = None
+    data_fim_sel    = None
+
+# ── Aplicar filtros ───────────────────────────────────────────────────────────
+
 df_filtrado = df.copy()
 
 if tipo_sel != "Todos":
@@ -48,6 +78,18 @@ if tipo_sel != "Todos":
 
 if campanhas_sel:
     df_filtrado = df_filtrado[df_filtrado["campaign_name"].isin(campanhas_sel)]
+
+if data_inicio_sel and "data_inicio" in df_filtrado.columns:
+    df_filtrado = df_filtrado[
+        df_filtrado["data_inicio"].isna() |
+        (df_filtrado["data_inicio"].dt.date >= data_inicio_sel)
+    ]
+
+if data_fim_sel and "data_fim" in df_filtrado.columns:
+    df_filtrado = df_filtrado[
+        df_filtrado["data_fim"].isna() |
+        (df_filtrado["data_fim"].dt.date <= data_fim_sel)
+    ]
 
 st.caption(f"{len(df_filtrado)} campanha(s) exibida(s)")
 

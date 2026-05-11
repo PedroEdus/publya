@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
+from google.api_core.exceptions import BadRequest
 from google.cloud import bigquery
 
 load_dotenv()
@@ -64,19 +65,43 @@ def criar_headers(token: str, client_id: str, email: str) -> dict:
 
 # ── Extração ──────────────────────────────────────────────────────────────────
 
-def extrair_campanhas(headers: dict, pagina: int = 1, itens_por_pagina: int = 20) -> list:
-    url  = "https://api.publya.com/kermit/leap/reports/external/campaigns"
-    resp = requests.get(url, headers=headers, params={"page": pagina, "itemsPerPage": itens_por_pagina})
+ITENS_POR_PAGINA = 20
 
-    if resp.status_code == 200:
-        items = resp.json()["items"]
-        print(f"  {len(items)} campanhas listadas")
-        return items
-    elif resp.status_code == 401:
-        print("  Erro 401: verifique token ou User-Data")
-    else:
-        print(f"  Erro {resp.status_code} ao listar campanhas")
-    return []
+
+def extrair_todas_campanhas(headers: dict) -> list:
+    """
+    Percorre todas as páginas usando o campo `pages` da resposta.
+    A API retorna: total, page, itensPerPage, pages, items.
+    """
+    url   = "https://api.publya.com/kermit/leap/reports/external/campaigns"
+    todas = []
+    pagina = 1
+
+    while True:
+        print(f"  Buscando página {pagina}...")
+        resp = requests.get(url, headers=headers, params={"page": pagina, "itemsPerPage": ITENS_POR_PAGINA})
+
+        if resp.status_code == 401:
+            print("  Erro 401: verifique token ou User-Data")
+            break
+        elif resp.status_code != 200:
+            print(f"  Erro {resp.status_code} ao listar campanhas")
+            break
+
+        dados       = resp.json()
+        items       = dados.get("items", [])
+        total_pages = dados.get("pages", 1)
+
+        todas.extend(items)
+        print(f"  {len(items)} campanhas na página {pagina}/{total_pages} (total: {len(todas)})")
+
+        if pagina >= total_pages:
+            break
+
+        pagina += 1
+
+    print(f"  Total de campanhas listadas: {len(todas)}")
+    return todas
 
 
 def consultar_detalhe(campanha_id: str, headers: dict) -> dict | None:
@@ -94,13 +119,14 @@ def consultar_detalhe(campanha_id: str, headers: dict) -> dict | None:
 
 def coletar_dados_conta(conta: dict) -> list[dict]:
     headers   = criar_headers(conta["token"], conta["client_id"], conta["email"])
-    campanhas = extrair_campanhas(headers)
+    campanhas = extrair_todas_campanhas(headers)
     resultado = []
 
     for camp in campanhas:
         cid   = camp["id"]
         cname = camp.get("name", f"Campanha {cid}")
-        cplat = camp.get("platform", "")
+        plat  = camp.get("platform", {})
+        cplat = plat.get("name", "") if isinstance(plat, dict) else str(plat)
 
         print(f"  -> [{cid}] {cname}")
         detalhe = consultar_detalhe(cid, headers)
@@ -121,15 +147,37 @@ def coletar_dados_conta(conta: dict) -> list[dict]:
 
 # ── Transformação ─────────────────────────────────────────────────────────────
 
+def extrair_datas_daily(item: dict) -> tuple[str | None, str | None]:
+    """Extrai data_min e data_max a partir do campo 'daily' do detalhe da campanha."""
+    daily = item.get("daily", {})
+    if not daily:
+        return None, None
+
+    todas_as_datas = [
+        entrada["date"]
+        for entries in daily.values()
+        for entrada in entries
+        if isinstance(entrada, dict) and "date" in entrada
+    ]
+
+    if not todas_as_datas:
+        return None, None
+
+    return min(todas_as_datas), max(todas_as_datas)
+
+
 def tabular_metricas(data: list[dict]) -> pd.DataFrame:
     rows = []
     for item in data:
-        metrics = item.get("metrics", {})
+        metrics             = item.get("metrics", {})
+        data_min, data_max  = extrair_datas_daily(item)
         rows.append({
             "client_id":     item.get("client_id", ""),
             "campaign_id":   item["campaign_id"],
             "campaign_name": item["campaign_name"],
             "platform":      item.get("platform", ""),
+            "data_inicio":   data_min,
+            "data_fim":      data_max,
             **{col: metrics.get(col, 0) for col in METRIC_COLS},
         })
     return pd.DataFrame(rows)
@@ -148,6 +196,8 @@ def preparar_silver(data: list[dict]) -> pd.DataFrame:
 
     df["campaign_id"]   = df["campaign_id"].astype(str)
     df["campaign_name"] = df["campaign_name"].astype(str)
+    df["data_inicio"]   = pd.to_datetime(df["data_inicio"], errors="coerce")
+    df["data_fim"]      = pd.to_datetime(df["data_fim"], errors="coerce")
     df["data_carga"]    = datetime.now()
     df["origem_fonte"]  = "PUBLYA_API"
 
@@ -204,14 +254,24 @@ def carregar_com_staging(df: pd.DataFrame, dataset_id: str, table_id: str) -> No
             videoCompletions = S.videoCompletions,
             audioStarts      = S.audioStarts,
             audioCompletions = S.audioCompletions,
+            data_inicio      = S.data_inicio,
+            data_fim         = S.data_fim,
             data_carga       = S.data_carga,
             origem_fonte     = S.origem_fonte
         WHEN NOT MATCHED THEN INSERT ROW
     """
 
     print("  Executando MERGE na tabela final...")
-    client.query(merge_sql).result()
-    print(f"  MERGE concluído: {table_id}")
+    try:
+        client.query(merge_sql).result()
+        print(f"  MERGE concluído: {table_id}")
+    except BadRequest as e:
+        if "Unrecognized name" in str(e) or "not found" in str(e).lower():
+            print(f"  Schema desatualizado — recriando tabela com WRITE_TRUNCATE...")
+            carregar_bigquery(df, dataset_id, table_id, modo="WRITE_TRUNCATE")
+            print(f"  Tabela recriada com novo schema: {table_id}")
+        else:
+            raise
 
     client.delete_table(f"{PROJECT_ID}.{dataset_id}.{staging_id}", not_found_ok=True)
     print(f"  Staging removido: {staging_id}")

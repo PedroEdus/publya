@@ -11,7 +11,13 @@ _ASSETS = os.path.join(os.path.dirname(__file__), "assets")
 LOGO_CLARA  = os.path.join(_ASSETS, "logo_preta.png")
 LOGO_ESCURA = os.path.join(_ASSETS, "logo_branca.png")
 
-COLOR_MAP = {"Vídeo": "#1F77B4", "Áudio": "#FF7F0E", "Display": "#2CA02C"}
+# Escala de cinzas do mais claro ao mais escuro — contraste adequado no tema dark
+COLOR_MAP = {
+    "Display": "#E8E8E8",   # quase branco
+    "Vídeo":   "#909090",   # cinza médio
+    "Áudio":   "#505050",   # cinza escuro
+    "Misto":   "#2E2E2E",   # cinza muito escuro
+}
 
 
 # ── Logo ──────────────────────────────────────────────────────────────────────
@@ -61,7 +67,7 @@ def exibir_logo() -> None:
     )
 
 
-# ── Tema ──────────────────────────────────────────────────────────────────────
+# ── Tema e locale ─────────────────────────────────────────────────────────────
 
 def _tema() -> str:
     return "plotly_dark" if st.get_option("theme.base") == "dark" else "plotly_white"
@@ -72,25 +78,33 @@ def _layout(fig, altura: int = 500):
         height=altura,
         template=_tema(),
         margin=dict(l=20, r=60, t=60, b=20),
+        separators=",.",   # padrão BR: vírgula decimal, ponto milhar
     )
     return fig
+
+
+def _br(valor, decimais: int = 0, prefixo: str = "") -> str:
+    """Formata número no padrão brasileiro: 1.234,56"""
+    fmt = f"{valor:,.{decimais}f}"
+    fmt = fmt.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{prefixo}{fmt}"
 
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
 
 def kpis(df: pd.DataFrame) -> None:
-    imp    = df["impressions"].sum()
-    clk    = df["clicks"].sum()
-    bud    = df["budget"].sum()
-    conv   = df["conversions"].sum()
-    ctr    = (clk / imp * 100) if imp else 0
+    imp  = df["impressions"].sum()
+    clk  = df["clicks"].sum()
+    bud  = df["budget"].sum()
+    conv = df["conversions"].sum()
+    ctr  = (clk / imp * 100) if imp else 0
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Impressões",    f"{imp:,.0f}")
-    c2.metric("Cliques",       f"{clk:,.0f}")
-    c3.metric("CTR médio",     f"{ctr:.2f}%")
-    c4.metric("Valor gasto",   f"R$ {bud:,.2f}")
-    c5.metric("Conversões",    f"{conv:,.0f}")
+    c1.metric("Impressões",  _br(imp))
+    c2.metric("Cliques",     _br(clk))
+    c3.metric("CTR médio",   _br(ctr, decimais=2) + "%")
+    c4.metric("Valor gasto", _br(bud, decimais=2, prefixo="R$ "))
+    c5.metric("Conversões",  _br(conv))
 
 
 # ── Gráficos de barra (helper interno) ───────────────────────────────────────
@@ -126,15 +140,15 @@ def _grafico_barras(
 
 
 def grafico_impressoes(df: pd.DataFrame) -> None:
-    _grafico_barras(df, "impressions", "Impressões por campanha", lambda v: f"{v:,.0f}")
+    _grafico_barras(df, "impressions", "Impressões por campanha", lambda v: _br(v))
 
 
 def grafico_cliques(df: pd.DataFrame) -> None:
-    _grafico_barras(df, "clicks", "Cliques por campanha", lambda v: f"{v:,.0f}")
+    _grafico_barras(df, "clicks", "Cliques por campanha", lambda v: _br(v))
 
 
 def grafico_budget(df: pd.DataFrame) -> None:
-    _grafico_barras(df, "budget", "Valor gasto por campanha (R$)", lambda v: f"R$ {v:,.2f}")
+    _grafico_barras(df, "budget", "Valor gasto por campanha (R$)", lambda v: _br(v, decimais=2, prefixo="R$ "))
 
 
 # ── Gráfico de rosca (tipo de mídia) ─────────────────────────────────────────
@@ -193,7 +207,26 @@ def tabela_resumo(df: pd.DataFrame) -> None:
 
     resumo = resumo.rename(columns={"Tipo_Midia": "Tipo", "Valor_Gasto": "Valor Gasto (R$)"})
 
-    st.dataframe(resumo, hide_index=True, width="stretch")
+    fmt_inteiro = lambda v: _br(v) if pd.notna(v) else ""
+    fmt_decimal = lambda v: _br(v, decimais=2) if pd.notna(v) else ""
+    fmt_real    = lambda v: _br(v, decimais=2, prefixo="R$ ") if pd.notna(v) else ""
+
+    st.dataframe(
+        resumo.style.format({
+            "Campanhas":       fmt_inteiro,
+            "Impressões":      fmt_inteiro,
+            "Cliques":         fmt_inteiro,
+            "Valor Gasto (R$)": fmt_real,
+            "Conversões":      fmt_inteiro,
+            "CTR (%)":         fmt_decimal,
+            "VCR (%)":         fmt_decimal,
+            "ACR (%)":         fmt_decimal,
+            "CPM (R$)":        fmt_real,
+            "CPC (R$)":        fmt_real,
+        }),
+        hide_index=True,
+        width="stretch",
+    )
 
 
 # ── Tabela detalhada ──────────────────────────────────────────────────────────
@@ -213,8 +246,23 @@ def tabela_campanhas(df: pd.DataFrame) -> None:
         "budget":        "Valor Gasto (R$)",
         "conversions":   "Conversões",
     })
+
+    fmt_inteiro = lambda v: _br(v) if pd.notna(v) else ""
+    fmt_decimal = lambda v: _br(v, decimais=2) if pd.notna(v) else ""
+    fmt_real    = lambda v: _br(v, decimais=2, prefixo="R$ ") if pd.notna(v) else ""
+
     st.dataframe(
-        df_exibir.sort_values("Impressões", ascending=False),
+        df_exibir.sort_values("Impressões", ascending=False).style.format({
+            "Impressões":      fmt_inteiro,
+            "Cliques":         fmt_inteiro,
+            "Conversões":      fmt_inteiro,
+            "CTR (%)":         fmt_decimal,
+            "VCR (%)":         fmt_decimal,
+            "ACR (%)":         fmt_decimal,
+            "Valor Gasto (R$)": fmt_real,
+            "CPM (R$)":        fmt_real,
+            "CPC (R$)":        fmt_real,
+        }),
         hide_index=True,
         width="stretch",
     )
