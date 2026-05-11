@@ -11,12 +11,12 @@ _ASSETS = os.path.join(os.path.dirname(__file__), "assets")
 LOGO_CLARA  = os.path.join(_ASSETS, "logo_preta.png")
 LOGO_ESCURA = os.path.join(_ASSETS, "logo_branca.png")
 
-# Escala de cinzas do mais claro ao mais escuro — contraste adequado no tema dark
+# Verde principal + variações para tema dark
 COLOR_MAP = {
-    "Display": "#E8E8E8",   # quase branco
-    "Vídeo":   "#909090",   # cinza médio
-    "Áudio":   "#505050",   # cinza escuro
-    "Misto":   "#2E2E2E",   # cinza muito escuro
+    "Display": "#008140",   # verde principal
+    "Vídeo":   "#00b359",   # verde claro
+    "Áudio":   "#005c2e",   # verde escuro
+    "Misto":   "#80c0a0",   # verde acinzentado
 }
 
 

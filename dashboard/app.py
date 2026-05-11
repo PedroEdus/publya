@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import pandas as pd
 import streamlit as st
 
@@ -46,29 +48,27 @@ campanhas_sel = st.sidebar.multiselect("Campanhas", campanhas_opcoes)
 
 st.sidebar.divider()
 
-tem_datas  = "data_inicio" in df.columns and "data_fim" in df.columns
-col_inicio = df["data_inicio"].dropna() if tem_datas else pd.Series(dtype="object")
-col_fim    = df["data_fim"].dropna()    if tem_datas else pd.Series(dtype="object")
+tem_datas = "data_inicio" in df.columns and "data_fim" in df.columns
 
-if tem_datas and not col_inicio.empty and not col_fim.empty:
-    data_min_global = col_inicio.min().date()
-    data_max_global = col_fim.max().date()
-
-    data_inicio_sel = st.sidebar.date_input(
-        "Data início (a partir de)",
-        value=data_min_global,
-        min_value=data_min_global,
-        max_value=data_max_global,
-    )
-    data_fim_sel = st.sidebar.date_input(
-        "Data fim (até)",
-        value=data_max_global,
-        min_value=data_min_global,
-        max_value=data_max_global,
-    )
+if tem_datas and df["data_inicio"].notna().any():
+    data_min_global = df["data_inicio"].dropna().min().date()
+    data_max_global = df["data_fim"].dropna().max().date()
 else:
-    data_inicio_sel = None
-    data_fim_sel    = None
+    data_max_global = date.today()
+    data_min_global = data_max_global - timedelta(days=90)
+
+data_inicio_sel = st.sidebar.date_input(
+    "Data início (a partir de)",
+    value=data_min_global,
+    min_value=data_min_global,
+    max_value=data_max_global,
+)
+data_fim_sel = st.sidebar.date_input(
+    "Data fim (até)",
+    value=data_max_global,
+    min_value=data_min_global,
+    max_value=data_max_global,
+)
 
 # ── Aplicar filtros ───────────────────────────────────────────────────────────
 
