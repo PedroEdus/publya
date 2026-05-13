@@ -262,37 +262,68 @@ def _grafico_barras_paginado(
     if key not in st.session_state:
         st.session_state[key] = 0
 
-    df_sorted  = df.sort_values(coluna, ascending=False).reset_index(drop=True)
-    n_total    = len(df_sorted)
-    n_pages    = max(1, -(-n_total // POR_PAGINA))
-    page       = min(st.session_state[key], n_pages - 1)
+    # Ordena campanhas pelo total de todas as mídias combinadas
+    totais = df.groupby("campaign_name")[coluna].sum().sort_values(ascending=False)
+    campanhas_ord = totais.index.tolist()
+    n_total  = len(campanhas_ord)
+    n_pages  = max(1, -(-n_total // POR_PAGINA))
+    page     = min(st.session_state[key], n_pages - 1)
     st.session_state[key] = page
 
-    df_page = df_sorted.iloc[page * POR_PAGINA:(page + 1) * POR_PAGINA]
-    max_val = df_sorted[coluna].max() or 1
+    campanhas_pag = campanhas_ord[page * POR_PAGINA:(page + 1) * POR_PAGINA]
+    df_page = df[df["campaign_name"].isin(campanhas_pag)].copy()
 
-    rows_html = ""
-    for _, row in df_page.iterrows():
-        color = COLOR_MAP.get(row["Tipo_Midia"], "#008140")
-        pct   = row[coluna] / max_val * 100
-        name  = row["campaign_name"]
-        if len(name) > 40:
-            name = name[:40] + "…"
-        rows_html += (
-            f'<div class="pub-bar-row">'
-            f'<div class="pub-bar-name" title="{row["campaign_name"]}">{name}</div>'
-            f'<div class="pub-bar-track"><div class="pub-bar-fill" style="width:{pct:.1f}%;background:{color}"></div></div>'
-            f'<div class="pub-bar-value">{fmt_func(row[coluna])}</div>'
-            f'</div>'
+    # Texto pré-formatado para exibir dentro de cada segmento
+    df_page["_text"] = df_page[coluna].apply(fmt_func)
+
+    # Ordem das categorias no eixo y: maior total no topo
+    cat_order = (
+        totais[totais.index.isin(campanhas_pag)]
+        .sort_values(ascending=True)
+        .index.tolist()
+    )
+
+    fig = px.bar(
+        df_page,
+        y="campaign_name",
+        x=coluna,
+        color="Tipo_Midia",
+        orientation="h",
+        color_discrete_map=COLOR_MAP,
+        barmode="stack",
+        text="_text",
+        title=titulo,
+        category_orders={"campaign_name": cat_order},
+    )
+
+    # Cor da fonte adaptada ao fundo de cada tipo de mídia
+    for trace in fig.data:
+        font_color = _font_color_para_fundo(COLOR_MAP.get(trace.name, "#888888"))
+        trace.update(
+            textposition="inside",
+            insidetextanchor="middle",
+            textfont=dict(color=font_color, size=10, family="JetBrains Mono, monospace"),
+            hovertemplate="%{y}<br>%{fullData.name}: %{x:,.0f}<extra></extra>",
         )
 
-    _html(f"""
-        <div class="pub-card">
-            <div class="pub-card-title">{titulo}</div>
-            <div class="pub-bar-list">{rows_html}</div>
-            <div class="pub-bar-legend">{_legenda_html(df)}</div>
-        </div>
-    """)
+    height = max(300, len(campanhas_pag) * 38 + 90)
+    fig.update_layout(
+        template=_tema(),
+        height=height,
+        margin=dict(l=10, r=20, t=50, b=10),
+        legend=dict(
+            orientation="h", y=-0.08, x=0,
+            font=dict(size=11, color="rgba(255,255,255,0.8)"),
+            title_text="",
+        ),
+        xaxis=dict(showgrid=False, showticklabels=False, title=""),
+        yaxis=dict(title="", tickfont=dict(size=11)),
+        title=dict(font=dict(size=14, color="#ffffff")),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        bargap=0.35,
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
     if n_pages > 1:
         c1, c2, c3 = st.columns([1, 5, 1])
