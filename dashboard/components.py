@@ -18,7 +18,7 @@ COLOR_MAP = {
     "Misto":   "#888888",
 }
 
-POR_PAGINA = 8
+POR_PAGINA = 20
 
 # ── CSS compartilhado ─────────────────────────────────────────────────────────
 
@@ -325,6 +325,15 @@ def grafico_budget(df: pd.DataFrame) -> None:
 
 # ── Donut ─────────────────────────────────────────────────────────────────────
 
+def _font_color_para_fundo(hex_color: str) -> str:
+    """Retorna 'black' ou 'white' de acordo com a luminância do fundo."""
+    r = int(hex_color[1:3], 16)
+    g = int(hex_color[3:5], 16)
+    b = int(hex_color[5:7], 16)
+    lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return "black" if lum > 0.55 else "white"
+
+
 def grafico_tipo_midia(df: pd.DataFrame, coluna: str = "impressions", titulo: str | None = None) -> None:
     label_map = {"impressions": "Impressões", "clicks": "Cliques", "budget": "Valor gasto (R$)"}
     titulo    = titulo or f"Distribuição por tipo de mídia — {label_map.get(coluna, coluna)}"
@@ -333,12 +342,36 @@ def grafico_tipo_midia(df: pd.DataFrame, coluna: str = "impressions", titulo: st
     total  = resumo[coluna].sum()
     fmt_total = _br(total) if coluna != "budget" else _br(total, 2, "R$ ")
 
+    # Texto e cor de fonte por fatia
+    def _fmt_val(v: float) -> str:
+        return _br(v, 2, "R$ ") if coluna == "budget" else _br(v)
+
+    resumo["_pct"]  = (resumo[coluna] / total * 100).round(1) if total else 0
+    resumo["_text"] = resumo.apply(
+        lambda r: f"{_fmt_val(r[coluna])}<br>{r['_pct']:.1f}%", axis=1
+    )
+
+    font_colors = [
+        _font_color_para_fundo(COLOR_MAP.get(t, "#888888"))
+        for t in resumo["Tipo_Midia"]
+    ]
+
     fig = px.pie(
         resumo, names="Tipo_Midia", values=coluna,
         color="Tipo_Midia", color_discrete_map=COLOR_MAP,
         hole=0.58, title=titulo,
     )
-    fig.update_traces(textinfo="none", hovertemplate="%{label}: %{value:,.0f} (%{percent})")
+    fig.update_traces(
+        text=resumo["_text"].tolist(),
+        textposition="inside",
+        textinfo="text",
+        insidetextfont=dict(
+            family="JetBrains Mono, monospace",
+            size=11,
+            color=font_colors,
+        ),
+        hovertemplate="%{label}: %{value:,.0f} (%{percent})",
+    )
     fig.add_annotation(
         text=f"total<br><b>{fmt_total}</b>",
         x=0.38, y=0.5, showarrow=False,
