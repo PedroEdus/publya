@@ -252,6 +252,31 @@ def kpis(df: pd.DataFrame) -> None:
 
 # ── Gráfico de barras paginado ────────────────────────────────────────────────
 
+def _segmentos_html(df_camp: pd.DataFrame, coluna: str, total_camp: float, max_val: float) -> str:
+    """Gera os segmentos coloridos de uma barra empilhada em HTML."""
+    html = ""
+    for tipo, color in COLOR_MAP.items():
+        rows = df_camp[df_camp["Tipo_Midia"] == tipo]
+        if rows.empty:
+            continue
+        val = float(rows[coluna].iloc[0])
+        if val <= 0:
+            continue
+
+        seg_w   = val / max_val * 100          # largura proporcional ao máximo geral
+        pct_int = val / total_camp * 100        # % dentro da campanha (para exibir)
+        label   = f"{pct_int:.0f}%" if pct_int >= 8 else ""
+        fc      = _font_color_para_fundo(color)
+
+        html += (
+            f'<div style="width:{seg_w:.2f}%;height:100%;background:{color};flex-shrink:0;'
+            f'display:inline-flex;align-items:center;justify-content:center;overflow:hidden;'
+            f'font-family:JetBrains Mono,monospace;font-size:10px;font-weight:500;color:{fc}">'
+            f'{label}</div>'
+        )
+    return html
+
+
 def _grafico_barras_paginado(
     df: pd.DataFrame,
     coluna: str,
@@ -262,7 +287,7 @@ def _grafico_barras_paginado(
     if key not in st.session_state:
         st.session_state[key] = 0
 
-    # Ordena campanhas pelo total de todas as mídias combinadas
+    # Totais por campanha (todas as mídias somadas)
     totais = df.groupby("campaign_name")[coluna].sum().sort_values(ascending=False)
     campanhas_ord = totais.index.tolist()
     n_total  = len(campanhas_ord)
@@ -271,59 +296,30 @@ def _grafico_barras_paginado(
     st.session_state[key] = page
 
     campanhas_pag = campanhas_ord[page * POR_PAGINA:(page + 1) * POR_PAGINA]
-    df_page = df[df["campaign_name"].isin(campanhas_pag)].copy()
+    max_val = totais.max() or 1
 
-    # Texto pré-formatado para exibir dentro de cada segmento
-    df_page["_text"] = df_page[coluna].apply(fmt_func)
+    rows_html = ""
+    for camp in campanhas_pag:
+        total_camp = totais[camp]
+        df_camp    = df[df["campaign_name"] == camp]
+        segs       = _segmentos_html(df_camp, coluna, total_camp, max_val)
+        name_trunc = (camp[:38] + "…") if len(camp) > 38 else camp
 
-    # Ordem das categorias no eixo y: maior total no topo
-    cat_order = (
-        totais[totais.index.isin(campanhas_pag)]
-        .sort_values(ascending=True)
-        .index.tolist()
-    )
-
-    fig = px.bar(
-        df_page,
-        y="campaign_name",
-        x=coluna,
-        color="Tipo_Midia",
-        orientation="h",
-        color_discrete_map=COLOR_MAP,
-        barmode="stack",
-        text="_text",
-        title=titulo,
-        category_orders={"campaign_name": cat_order},
-    )
-
-    # Cor da fonte adaptada ao fundo de cada tipo de mídia
-    for trace in fig.data:
-        font_color = _font_color_para_fundo(COLOR_MAP.get(trace.name, "#888888"))
-        trace.update(
-            textposition="inside",
-            insidetextanchor="middle",
-            textfont=dict(color=font_color, size=10, family="JetBrains Mono, monospace"),
-            hovertemplate="%{y}<br>%{fullData.name}: %{x:,.0f}<extra></extra>",
+        rows_html += (
+            f'<div class="pub-bar-row">'
+            f'<div class="pub-bar-name" title="{camp}">{name_trunc}</div>'
+            f'<div class="pub-bar-track" style="display:flex;overflow:hidden;border-radius:3px">{segs}</div>'
+            f'<div class="pub-bar-value">{fmt_func(total_camp)}</div>'
+            f'</div>'
         )
 
-    height = max(300, len(campanhas_pag) * 38 + 90)
-    fig.update_layout(
-        template=_tema(),
-        height=height,
-        margin=dict(l=10, r=20, t=50, b=10),
-        legend=dict(
-            orientation="h", y=-0.08, x=0,
-            font=dict(size=11, color="rgba(255,255,255,0.8)"),
-            title_text="",
-        ),
-        xaxis=dict(showgrid=False, showticklabels=False, title=""),
-        yaxis=dict(title="", tickfont=dict(size=11)),
-        title=dict(font=dict(size=14, color="#ffffff")),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        bargap=0.35,
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    _html(f"""
+        <div class="pub-card">
+            <div class="pub-card-title">{titulo}</div>
+            <div class="pub-bar-list">{rows_html}</div>
+            <div class="pub-bar-legend">{_legenda_html(df)}</div>
+        </div>
+    """)
 
     if n_pages > 1:
         c1, c2, c3 = st.columns([1, 5, 1])
