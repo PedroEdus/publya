@@ -155,6 +155,16 @@ _CSS = """
 """
 
 
+# ── Helpers de renderização ───────────────────────────────────────────────────
+
+def _html(content: str) -> None:
+    """Renderiza HTML puro. Usa st.html (>=1.31) com fallback para st.markdown."""
+    if hasattr(st, "html"):
+        st.html(_CSS + content)
+    else:
+        st.markdown(_CSS + content, unsafe_allow_html=True)
+
+
 # ── Logo ──────────────────────────────────────────────────────────────────────
 
 def _imagem_base64(caminho: str) -> str:
@@ -276,16 +286,13 @@ def _grafico_barras_paginado(
             f'</div>'
         )
 
-    st.markdown(
-        _CSS + f"""
+    _html(f"""
         <div class="pub-card">
             <div class="pub-card-title">{titulo}</div>
             <div class="pub-bar-list">{rows_html}</div>
             <div class="pub-bar-legend">{_legenda_html(df)}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """)
 
     if n_pages > 1:
         c1, c2, c3 = st.columns([1, 5, 1])
@@ -348,7 +355,7 @@ def grafico_tipo_midia(df: pd.DataFrame, coluna: str = "impressions", titulo: st
         ),
         title=dict(font=dict(size=14, color="#ffffff")),
     )
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
 
 
 # ── Tabela resumo ─────────────────────────────────────────────────────────────
@@ -377,9 +384,6 @@ def tabela_resumo(df: pd.DataFrame) -> None:
     resumo["ACR (%)"]  = (resumo["Audio_Completions"] / resumo["Audio_Starts"].replace(0, pd.NA) * 100).round(2)
     resumo["CPM (R$)"] = (resumo["Valor_Gasto"] / resumo["Impressões"].replace(0, pd.NA) * 1000).round(2)
     resumo["CPC (R$)"] = (resumo["Valor_Gasto"] / resumo["Cliques"].replace(0, pd.NA)).round(2)
-
-    cols_num = ["Campanhas", "Impressões", "Cliques", "Conversões",
-                "CTR (%)", "VCR (%)", "ACR (%)", "CPM (R$)", "CPC (R$)", "Valor_Gasto"]
 
     header = (
         "<tr>"
@@ -418,15 +422,14 @@ def tabela_resumo(df: pd.DataFrame) -> None:
             f'<td class="num">{fmt(row["CTR (%)"], 2)}</td>'
             f'<td class="num">{fmt(row["Valor_Gasto"], 2, "R$ ")}</td>'
             f'<td class="num">{fmt(row["Conversões"])}</td>'
-            f'<td class="num">{fmt(row["VCR (%)"], 2) if pd.notna(row.get("VCR (%)")) else "—"}</td>'
-            f'<td class="num">{fmt(row["ACR (%)"], 2) if pd.notna(row.get("ACR (%)")) else "—"}</td>'
+            f'<td class="num">{fmt(row.get("VCR (%)"), 2) if pd.notna(row.get("VCR (%)")) else "—"}</td>'
+            f'<td class="num">{fmt(row.get("ACR (%)"), 2) if pd.notna(row.get("ACR (%)")) else "—"}</td>'
             f'<td class="num">{fmt(row["CPM (R$)"], 2, "R$ ")}</td>'
             f'<td class="num">{fmt(row["CPC (R$)"], 2, "R$ ")}</td>'
             f'</tr>'
         )
 
-    st.markdown(
-        _CSS + f"""
+    _html(f"""
         <div class="pub-card">
             <div class="pub-table-wrap">
                 <table class="pub-table">
@@ -435,9 +438,7 @@ def tabela_resumo(df: pd.DataFrame) -> None:
                 </table>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """)
 
 
 # ── Tabela detalhe ────────────────────────────────────────────────────────────
@@ -484,8 +485,7 @@ def tabela_campanhas(df: pd.DataFrame) -> None:
             f'</tr>'
         )
 
-    st.markdown(
-        _CSS + f"""
+    _html(f"""
         <div class="pub-card">
             <div class="pub-table-wrap">
                 <table class="pub-table">
@@ -494,6 +494,4 @@ def tabela_campanhas(df: pd.DataFrame) -> None:
                 </table>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """)
