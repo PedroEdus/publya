@@ -252,7 +252,7 @@ def kpis(df: pd.DataFrame) -> None:
 
 # ── Gráfico de barras paginado ────────────────────────────────────────────────
 
-def _segmentos_html(df_camp: pd.DataFrame, coluna: str, total_camp: float, max_val: float) -> str:
+def _segmentos_html(df_camp: pd.DataFrame, coluna: str, total_camp: float, max_val: float, fmt_func) -> str:
     """Gera os segmentos coloridos de uma barra empilhada em HTML."""
     html = ""
     for tipo, color in COLOR_MAP.items():
@@ -263,14 +263,15 @@ def _segmentos_html(df_camp: pd.DataFrame, coluna: str, total_camp: float, max_v
         if val <= 0:
             continue
 
-        seg_w   = val / max_val * 100          # largura proporcional ao máximo geral
-        pct_int = val / total_camp * 100        # % dentro da campanha (para exibir)
+        seg_w   = val / max_val * 100       # largura proporcional ao máximo geral
+        pct_int = val / total_camp * 100    # % dentro da campanha
         label   = f"{pct_int:.0f}%" if pct_int >= 8 else ""
         fc      = _font_color_para_fundo(color)
+        tooltip = f"{tipo}: {pct_int:.0f}% ({fmt_func(val)})"
 
         html += (
-            f'<div style="width:{seg_w:.2f}%;height:100%;background:{color};flex-shrink:0;'
-            f'display:inline-flex;align-items:center;justify-content:center;overflow:hidden;'
+            f'<div title="{tooltip}" style="width:{seg_w:.2f}%;height:100%;background:{color};flex-shrink:0;'
+            f'display:inline-flex;align-items:center;justify-content:center;overflow:hidden;cursor:default;'
             f'font-family:JetBrains Mono,monospace;font-size:10px;font-weight:500;color:{fc}">'
             f'{label}</div>'
         )
@@ -302,7 +303,7 @@ def _grafico_barras_paginado(
     for camp in campanhas_pag:
         total_camp = totais[camp]
         df_camp    = df[df["campaign_name"] == camp]
-        segs       = _segmentos_html(df_camp, coluna, total_camp, max_val)
+        segs       = _segmentos_html(df_camp, coluna, total_camp, max_val, fmt_func)
         name_trunc = (camp[:38] + "…") if len(camp) > 38 else camp
 
         rows_html += (
@@ -375,7 +376,8 @@ def grafico_tipo_midia(df: pd.DataFrame, coluna: str = "impressions", titulo: st
 
     resumo["_pct"]  = (resumo[coluna] / total * 100).round(1) if total else 0
     resumo["_text"] = resumo.apply(
-        lambda r: f"{_fmt_val(r[coluna])}<br>{r['_pct']:.1f}%", axis=1
+        lambda r: f"{_fmt_val(r[coluna])}<br>{r['_pct']:.1f}%" if r["_pct"] >= 5 else "",
+        axis=1,
     )
 
     font_colors = [
