@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
+from style import aplicar_tema
 from components import (
     exibir_logo,
     grafico_budget,
@@ -20,6 +21,10 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
+
+# ── Tema ──────────────────────────────────────────────────────────────────────
+
+aplicar_tema()
 
 # ── Cabeçalho ─────────────────────────────────────────────────────────────────
 
