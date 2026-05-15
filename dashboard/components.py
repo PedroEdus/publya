@@ -14,8 +14,8 @@ LOGO_ESCURA = os.path.join(_ASSETS, "logo_branca.png")
 COLOR_MAP = {
     "Display": "#008140",
     "Vídeo":   "#00b359",
-    "Áudio":   "#E8E8E8",
-    "Misto":   "#888888",
+    "Áudio":   "#004d26",
+    "Misto":   "#66cc99",
 }
 
 POR_PAGINA = 20
@@ -241,13 +241,15 @@ def kpis(df: pd.DataFrame) -> None:
     bud  = df["budget"].sum()
     conv = df["conversions"].sum()
     ctr  = (clk / imp * 100) if imp else 0
+    cpc  = (bud / clk) if clk else 0
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Impressões",  _br(imp))
     c2.metric("Cliques",     _br(clk))
     c3.metric("CTR médio",   _br(ctr, decimais=2) + "%")
     c4.metric("Valor gasto", _br(bud, decimais=2, prefixo="R$ "))
-    c5.metric("Conversões",  _br(conv))
+    c5.metric("CPC médio",   _br(cpc, decimais=2, prefixo="R$ "))
+    c6.metric("Conversões",  _br(conv))
 
 
 # ── Gráfico de barras paginado ────────────────────────────────────────────────
@@ -400,18 +402,20 @@ def grafico_tipo_midia(df: pd.DataFrame, coluna: str = "impressions", titulo: st
             color=font_colors,
         ),
         hovertemplate="%{label}: %{value:,.0f} (%{percent})",
+        domain=dict(x=[0, 0.62], y=[0, 1]),
     )
     fig.add_annotation(
-        text=f"total<br><b>{fmt_total}</b>",
-        x=0.38, y=0.5, showarrow=False,
-        font=dict(family="JetBrains Mono, monospace", size=13, color="#ffffff"),
+        text=f"<b>{fmt_total}</b><br><span style='font-size:11px;opacity:0.6'>total</span>",
+        x=0.31, y=0.5, showarrow=False,
+        font=dict(family="JetBrains Mono, monospace", size=14, color="#ffffff"),
         align="center",
+        xanchor="center", yanchor="middle",
     )
     fig.update_layout(
         template=_tema(), separators=",.", height=360,
         margin=dict(l=10, r=10, t=50, b=10),
         legend=dict(
-            orientation="v", x=0.78, y=0.5,
+            orientation="v", x=0.65, y=0.5,
             xanchor="left", yanchor="middle",
             font=dict(size=12, color="rgba(255,255,255,0.8)"),
         ),
@@ -505,6 +509,34 @@ def tabela_resumo(df: pd.DataFrame) -> None:
 
 # ── Tabela detalhe ────────────────────────────────────────────────────────────
 
+def _aproveitamento_html(row: pd.Series) -> str:
+    """
+    Taxa de aproveitamento de mídia por tipo:
+      Display → CTR (%)
+      Vídeo   → VCR (%)
+      Áudio   → ACR (%)
+    Exibe o valor + rótulo da métrica usada.
+    """
+    tipo = str(row.get("Tipo_Midia", ""))
+    mapa = {
+        "Display": ("CTR (%)",  "CTR"),
+        "Vídeo":   ("VCR (%)",  "VCR"),
+        "Áudio":   ("ACR (%)",  "ACR"),
+    }
+    col, label = mapa.get(tipo, (None, None))
+    if col and col in row.index and pd.notna(row[col]):
+        try:
+            val = float(row[col])
+            return (
+                f'<span style="font-family:JetBrains Mono,monospace;font-size:12px">'
+                f'{_br(val, 2)}%</span>'
+                f'<span style="font-size:10px;color:rgba(255,255,255,0.45);margin-left:4px">{label}</span>'
+            )
+        except Exception:
+            pass
+    return "—"
+
+
 def tabela_campanhas(df: pd.DataFrame) -> None:
     colunas = [
         "campaign_name", "Tipo_Midia", "impressions", "clicks",
@@ -517,9 +549,10 @@ def tabela_campanhas(df: pd.DataFrame) -> None:
         "<tr>"
         "<th>Campanha</th><th>Tipo</th>"
         "<th class='num'>Impressões</th><th class='num'>Cliques</th>"
-        "<th class='num'>CTR (%)</th><th class='num'>Valor Gasto (R$)</th>"
+        "<th class='num'>Aproveitamento</th>"
+        "<th class='num'>Valor Gasto (R$)</th>"
         "<th class='num'>CPM (R$)</th><th class='num'>CPC (R$)</th>"
-        "<th class='num'>Conversões</th><th class='num'>VCR (%)</th><th class='num'>ACR (%)</th>"
+        "<th class='num'>Conversões</th>"
         "</tr>"
     )
 
@@ -537,13 +570,11 @@ def tabela_campanhas(df: pd.DataFrame) -> None:
             f'<td>{_badge_html(str(row.get("Tipo_Midia", "")))}</td>'
             f'<td class="num">{fmt("impressions")}</td>'
             f'<td class="num">{fmt("clicks")}</td>'
-            f'<td class="num">{fmt("CTR (%)", 2)}</td>'
+            f'<td class="num">{_aproveitamento_html(row)}</td>'
             f'<td class="num">{fmt("budget", 2, "R$ ")}</td>'
             f'<td class="num">{fmt("CPM (R$)", 2, "R$ ")}</td>'
             f'<td class="num">{fmt("CPC (R$)", 2, "R$ ")}</td>'
             f'<td class="num">{fmt("conversions")}</td>'
-            f'<td class="num">{fmt("VCR (%)", 2)}</td>'
-            f'<td class="num">{fmt("ACR (%)", 2)}</td>'
             f'</tr>'
         )
 
