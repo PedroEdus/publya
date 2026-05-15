@@ -66,9 +66,9 @@ SCHEMA_SILVER = [
     bigquery.SchemaField("videoCompletions",  "INT64"),
     bigquery.SchemaField("audioStarts",       "INT64"),
     bigquery.SchemaField("audioCompletions",  "INT64"),
-    bigquery.SchemaField("data_inicio",       "TIMESTAMP"),
-    bigquery.SchemaField("data_fim",          "TIMESTAMP"),
-    bigquery.SchemaField("data_carga",        "TIMESTAMP"),
+    bigquery.SchemaField("data_inicio",       "DATETIME"),
+    bigquery.SchemaField("data_fim",          "DATETIME"),
+    bigquery.SchemaField("data_carga",        "DATETIME"),
     bigquery.SchemaField("origem_fonte",      "STRING"),
 ]
 
