@@ -56,16 +56,16 @@ SCHEMA_SILVER = [
     bigquery.SchemaField("campaign_id",       "STRING"),
     bigquery.SchemaField("campaign_name",     "STRING"),
     bigquery.SchemaField("Tipo_Midia",        "STRING"),
-    bigquery.SchemaField("budget",            "FLOAT64"),
-    bigquery.SchemaField("impressions",       "FLOAT64"),
-    bigquery.SchemaField("clicks",            "FLOAT64"),
-    bigquery.SchemaField("reach",             "FLOAT64"),
-    bigquery.SchemaField("frequency",         "FLOAT64"),
-    bigquery.SchemaField("conversions",       "FLOAT64"),
-    bigquery.SchemaField("videoStarts",       "FLOAT64"),
-    bigquery.SchemaField("videoCompletions",  "FLOAT64"),
-    bigquery.SchemaField("audioStarts",       "FLOAT64"),
-    bigquery.SchemaField("audioCompletions",  "FLOAT64"),
+    bigquery.SchemaField("budget",            "FLOAT64"),   # valor monetário → decimal
+    bigquery.SchemaField("impressions",       "INT64"),     # contagens → inteiro
+    bigquery.SchemaField("clicks",            "INT64"),
+    bigquery.SchemaField("reach",             "INT64"),
+    bigquery.SchemaField("frequency",         "FLOAT64"),   # média → decimal
+    bigquery.SchemaField("conversions",       "INT64"),
+    bigquery.SchemaField("videoStarts",       "INT64"),
+    bigquery.SchemaField("videoCompletions",  "INT64"),
+    bigquery.SchemaField("audioStarts",       "INT64"),
+    bigquery.SchemaField("audioCompletions",  "INT64"),
     bigquery.SchemaField("data_inicio",       "TIMESTAMP"),
     bigquery.SchemaField("data_fim",          "TIMESTAMP"),
     bigquery.SchemaField("data_carga",        "TIMESTAMP"),
@@ -206,11 +206,22 @@ def tabular_metricas(data: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+_COLS_INT = [
+    "impressions", "clicks", "reach", "conversions",
+    "videoStarts", "videoCompletions", "audioStarts", "audioCompletions",
+]
+
+
 def preparar_silver(data: list[dict]) -> pd.DataFrame:
     df = tabular_metricas(data)
 
     for col in METRIC_COLS:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    # Contagens → int64 (evita conflito de tipo com a tabela BQ que usa INT64)
+    for col in _COLS_INT:
+        if col in df.columns:
+            df[col] = df[col].astype("int64")
 
     df["Tipo_Midia"] = np.where(
         df["videoStarts"] != 0, "Vídeo",
