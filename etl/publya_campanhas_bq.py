@@ -267,54 +267,60 @@ def carregar_bigquery(
     print(f"  Carga concluída: {table_full} ({len(df)} linhas)")
 
 
+def _ler_schema_bq(dataset_id: str, table_id: str, df: pd.DataFrame) -> list:
+    """
+    Lê o schema real da tabela destino no BigQuery e filtra pelas colunas
+    presentes no DataFrame — garante que staging e target têm tipos idênticos.
+    Usa SCHEMA_SILVER como fallback quando a tabela ainda não existe.
+    """
+    try:
+        table   = client.get_table(f"{PROJECT_ID}.{dataset_id}.{table_id}")
+        df_cols = set(df.columns)
+        schema  = [f for f in table.schema if f.name in df_cols]
+        tipos   = {f.name: f.field_type for f in schema}
+        print(f"  Schema lido do BigQuery ({len(schema)} colunas): {tipos}")
+        return schema
+    except Exception:
+        print("  Tabela destino ainda não existe — usando SCHEMA_SILVER como padrão")
+        return SCHEMA_SILVER
+
+
 def carregar_com_staging(df: pd.DataFrame, dataset_id: str, table_id: str) -> None:
     """
     Carrega via staging + MERGE para proteger a tabela final.
 
     Fluxo:
-      1. Sobe os dados em uma tabela staging (WRITE_TRUNCATE).
+      1. Lê o schema real da tabela destino no BigQuery.
+      2. Sobe os dados em staging com esse schema exato (evita conflito de tipos).
          Se falhar aqui, a tabela final não é tocada.
-      2. Executa MERGE: atualiza campanhas existentes, insere novas.
-      3. Apaga a tabela staging.
+      3. Executa MERGE: atualiza campanhas existentes, insere novas.
+      4. Apaga a tabela staging.
     """
     staging_id = f"{table_id}_staging"
 
-    print(f"  Carregando staging ({staging_id})...")
-    carregar_bigquery(df, dataset_id, staging_id, modo="WRITE_TRUNCATE", schema=SCHEMA_SILVER)
+    # Schema vem diretamente do BQ — sem hardcode de tipos
+    schema_staging = _ler_schema_bq(dataset_id, table_id, df)
 
-    # Colunas fixas do schema silver — INSERT explícito evita falhas por
-    # divergência de contagem entre staging e tabela final.
-    _COLS = [
-        "campaign_id", "campaign_name", "Tipo_Midia",
-        "budget", "impressions", "clicks", "reach", "frequency", "conversions",
-        "videoStarts", "videoCompletions", "audioStarts", "audioCompletions",
-        "data_inicio", "data_fim", "data_carga", "origem_fonte",
-    ]
-    _cols_sql    = ", ".join(_COLS)
-    _s_cols_sql  = ", ".join(f"S.{c}" for c in _COLS)
+    print(f"  Carregando staging ({staging_id})...")
+    carregar_bigquery(df, dataset_id, staging_id, modo="WRITE_TRUNCATE", schema=schema_staging)
+
+    # INSERT explícito com as colunas do staging (interseção com target)
+    cols    = [f.name for f in schema_staging]
+    cols_sql   = ", ".join(cols)
+    s_cols_sql = ", ".join(f"S.{c}" for c in cols)
+
+    # UPDATE SET para todas as colunas exceto as chaves do ON
+    update_cols = [c for c in cols if c not in ("campaign_id", "Tipo_Midia")]
+    update_sql  = ",\n            ".join(f"{c} = S.{c}" for c in update_cols)
 
     merge_sql = f"""
         MERGE `{PROJECT_ID}.{dataset_id}.{table_id}` T
         USING `{PROJECT_ID}.{dataset_id}.{staging_id}` S
         ON T.campaign_id = S.campaign_id AND T.Tipo_Midia = S.Tipo_Midia
         WHEN MATCHED THEN UPDATE SET
-            campaign_name    = S.campaign_name,
-            impressions      = S.impressions,
-            clicks           = S.clicks,
-            budget           = S.budget,
-            reach            = S.reach,
-            frequency        = S.frequency,
-            conversions      = S.conversions,
-            videoStarts      = S.videoStarts,
-            videoCompletions = S.videoCompletions,
-            audioStarts      = S.audioStarts,
-            audioCompletions = S.audioCompletions,
-            data_inicio      = S.data_inicio,
-            data_fim         = S.data_fim,
-            data_carga       = S.data_carga,
-            origem_fonte     = S.origem_fonte
-        WHEN NOT MATCHED THEN INSERT ({_cols_sql})
-        VALUES ({_s_cols_sql})
+            {update_sql}
+        WHEN NOT MATCHED THEN INSERT ({cols_sql})
+        VALUES ({s_cols_sql})
     """
 
     print("  Executando MERGE na tabela final...")
@@ -324,12 +330,10 @@ def carregar_com_staging(df: pd.DataFrame, dataset_id: str, table_id: str) -> No
     except BadRequest as e:
         err = str(e)
         schema_mismatch = any(k in err for k in (
-            "Unrecognized name",
-            "wrong column count",
-            "not found in table",
+            "Unrecognized name", "wrong column count", "not found in table",
         )) or "not found" in err.lower()
         if schema_mismatch:
-            print(f"  Schema divergente ({err[:120]}) — recriando tabela com WRITE_TRUNCATE...")
+            print(f"  Schema divergente — recriando tabela com WRITE_TRUNCATE...")
             carregar_bigquery(df, dataset_id, table_id, modo="WRITE_TRUNCATE", schema=SCHEMA_SILVER)
             print(f"  Tabela recriada com novo schema: {table_id}")
         else:
