@@ -238,6 +238,17 @@ def carregar_com_staging(df: pd.DataFrame, dataset_id: str, table_id: str) -> No
     print(f"  Carregando staging ({staging_id})...")
     carregar_bigquery(df, dataset_id, staging_id, modo="WRITE_TRUNCATE")
 
+    # Colunas fixas do schema silver — INSERT explícito evita falhas por
+    # divergência de contagem entre staging e tabela final.
+    _COLS = [
+        "campaign_id", "campaign_name", "Tipo_Midia",
+        "budget", "impressions", "clicks", "reach", "frequency", "conversions",
+        "videoStarts", "videoCompletions", "audioStarts", "audioCompletions",
+        "data_inicio", "data_fim", "data_carga", "origem_fonte",
+    ]
+    _cols_sql    = ", ".join(_COLS)
+    _s_cols_sql  = ", ".join(f"S.{c}" for c in _COLS)
+
     merge_sql = f"""
         MERGE `{PROJECT_ID}.{dataset_id}.{table_id}` T
         USING `{PROJECT_ID}.{dataset_id}.{staging_id}` S
@@ -258,7 +269,8 @@ def carregar_com_staging(df: pd.DataFrame, dataset_id: str, table_id: str) -> No
             data_fim         = S.data_fim,
             data_carga       = S.data_carga,
             origem_fonte     = S.origem_fonte
-        WHEN NOT MATCHED THEN INSERT ROW
+        WHEN NOT MATCHED THEN INSERT ({_cols_sql})
+        VALUES ({_s_cols_sql})
     """
 
     print("  Executando MERGE na tabela final...")
@@ -266,8 +278,14 @@ def carregar_com_staging(df: pd.DataFrame, dataset_id: str, table_id: str) -> No
         client.query(merge_sql).result()
         print(f"  MERGE concluído: {table_id}")
     except BadRequest as e:
-        if "Unrecognized name" in str(e) or "not found" in str(e).lower():
-            print(f"  Schema desatualizado — recriando tabela com WRITE_TRUNCATE...")
+        err = str(e)
+        schema_mismatch = any(k in err for k in (
+            "Unrecognized name",
+            "wrong column count",
+            "not found in table",
+        )) or "not found" in err.lower()
+        if schema_mismatch:
+            print(f"  Schema divergente ({err[:120]}) — recriando tabela com WRITE_TRUNCATE...")
             carregar_bigquery(df, dataset_id, table_id, modo="WRITE_TRUNCATE")
             print(f"  Tabela recriada com novo schema: {table_id}")
         else:
