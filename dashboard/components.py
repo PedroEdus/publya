@@ -12,10 +12,10 @@ LOGO_CLARA  = os.path.join(_ASSETS, "logo_preta.png")
 LOGO_ESCURA = os.path.join(_ASSETS, "logo_branca.png")
 
 COLOR_MAP = {
-    "Display": "#008140",
-    "Vídeo":   "#00b359",
-    "Áudio":   "#004d26",
-    "Misto":   "#66cc99",
+    "Display": "#008140",   # verde escuro
+    "Vídeo":   "#00b359",   # verde claro
+    "Áudio":   "#ffffff",   # branco
+    "Misto":   "#aaaaaa",   # cinza (fallback)
 }
 
 POR_PAGINA = 20
@@ -231,6 +231,42 @@ def _legenda_html(df: pd.DataFrame) -> str:
         f'{t}</span>'
         for t in COLOR_MAP if t in tipos
     )
+
+
+# ── Semáforo ─────────────────────────────────────────────────────────────────
+
+_COR_BOM    = "#008140"
+_COR_MEDIO  = "#d4a017"
+_COR_RUIM   = "#c0392b"
+
+
+def _dot(color: str) -> str:
+    """Círculo colorido para indicador semáforo."""
+    return (
+        f'<span style="display:inline-block;width:7px;height:7px;border-radius:50%;'
+        f'background:{color};flex-shrink:0;margin-right:5px"></span>'
+    )
+
+
+def _cor_cpc(cpc: float, media: float) -> str:
+    """Verde < 90 % da média | Amarelo 90–120 % | Vermelho > 120 %."""
+    if media <= 0:
+        return _COR_MEDIO
+    ratio = cpc / media
+    if ratio <= 0.90:
+        return _COR_BOM
+    elif ratio <= 1.20:
+        return _COR_MEDIO
+    return _COR_RUIM
+
+
+def _cor_aproveitamento(pct: float) -> str:
+    """Verde ≥ 80 % | Amarelo 50–79 % | Vermelho < 50 %."""
+    if pct >= 80:
+        return _COR_BOM
+    elif pct >= 50:
+        return _COR_MEDIO
+    return _COR_RUIM
 
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
@@ -511,26 +547,28 @@ def tabela_resumo(df: pd.DataFrame) -> None:
 
 def _aproveitamento_html(row: pd.Series) -> str:
     """
-    Taxa de aproveitamento de mídia por tipo:
-      Display → CTR (%)
+    Taxa de aproveitamento de mídia por tipo + semáforo:
+      Display → CTR (%)  — verde ≥80 / amarelo 50-79 / vermelho <50
       Vídeo   → VCR (%)
       Áudio   → ACR (%)
-    Exibe o valor + rótulo da métrica usada.
     """
     tipo = str(row.get("Tipo_Midia", ""))
     mapa = {
-        "Display": ("CTR (%)",  "CTR"),
-        "Vídeo":   ("VCR (%)",  "VCR"),
-        "Áudio":   ("ACR (%)",  "ACR"),
+        "Display": ("CTR (%)", "CTR"),
+        "Vídeo":   ("VCR (%)", "VCR"),
+        "Áudio":   ("ACR (%)", "ACR"),
     }
     col, label = mapa.get(tipo, (None, None))
     if col and col in row.index and pd.notna(row[col]):
         try:
             val = float(row[col])
+            cor = _cor_aproveitamento(val)
             return (
-                f'<span style="font-family:JetBrains Mono,monospace;font-size:12px">'
-                f'{_br(val, 2)}%</span>'
+                f'<span style="display:inline-flex;align-items:center">'
+                f'{_dot(cor)}'
+                f'<span style="font-family:JetBrains Mono,monospace;font-size:12px">{_br(val, 2)}%</span>'
                 f'<span style="font-size:10px;color:rgba(255,255,255,0.45);margin-left:4px">{label}</span>'
+                f'</span>'
             )
         except Exception:
             pass
@@ -544,6 +582,12 @@ def tabela_campanhas(df: pd.DataFrame) -> None:
     ]
     df_exibir = df[[c for c in colunas if c in df.columns]].copy()
     df_exibir = df_exibir.sort_values("impressions", ascending=False)
+
+    # Média do CPC para o semáforo (exclui zeros e NaN)
+    avg_cpc = (
+        df_exibir["CPC (R$)"].replace(0, pd.NA).dropna().mean()
+        if "CPC (R$)" in df_exibir.columns else None
+    )
 
     header = (
         "<tr>"
@@ -564,6 +608,19 @@ def tabela_campanhas(df: pd.DataFrame) -> None:
             except Exception:
                 return "—"
 
+        # CPC com semáforo
+        cpc_html = "—"
+        if "CPC (R$)" in row.index and pd.notna(row["CPC (R$)"]) and float(row["CPC (R$)"]) > 0:
+            cpc_val = float(row["CPC (R$)"])
+            cor = _cor_cpc(cpc_val, avg_cpc) if avg_cpc else _COR_MEDIO
+            cpc_html = (
+                f'<span style="display:inline-flex;align-items:center">'
+                f'{_dot(cor)}'
+                f'<span style="font-family:JetBrains Mono,monospace;font-size:12px">'
+                f'{_br(cpc_val, 2, "R$ ")}</span>'
+                f'</span>'
+            )
+
         rows_html += (
             f'<tr>'
             f'<td>{row["campaign_name"]}</td>'
@@ -573,7 +630,7 @@ def tabela_campanhas(df: pd.DataFrame) -> None:
             f'<td class="num">{_aproveitamento_html(row)}</td>'
             f'<td class="num">{fmt("budget", 2, "R$ ")}</td>'
             f'<td class="num">{fmt("CPM (R$)", 2, "R$ ")}</td>'
-            f'<td class="num">{fmt("CPC (R$)", 2, "R$ ")}</td>'
+            f'<td class="num">{cpc_html}</td>'
             f'<td class="num">{fmt("conversions")}</td>'
             f'</tr>'
         )
