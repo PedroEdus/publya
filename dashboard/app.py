@@ -141,4 +141,22 @@ with aba_tab:
     st.divider()
 
     st.subheader("Detalhe por campanha")
+
+    # Exportação CSV (formato BR)
+    csv_df = df_filtrado.copy().rename(columns={
+        "campaign_name": "Campanha",
+        "Tipo_Midia":    "Tipo",
+        "impressions":   "Impressões",
+        "clicks":        "Cliques",
+        "budget":        "Valor Gasto (R$)",
+        "conversions":   "Conversões",
+    })
+    csv_data = csv_df.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig").encode("utf-8-sig")
+    st.download_button(
+        label="📥 Baixar dados (CSV)",
+        data=csv_data,
+        file_name=f"publya_campanhas_{date.today():%Y%m%d}.csv",
+        mime="text/csv",
+    )
+
     tabela_campanhas(df_filtrado)

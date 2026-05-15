@@ -647,23 +647,3 @@ def tabela_campanhas(df: pd.DataFrame) -> None:
         </div>
     """)
 
-    # Botão de exportação CSV (formato BR — separador ; e decimal ,)
-    df_csv = df_exibir.rename(columns={
-        "campaign_name": "Campanha",
-        "Tipo_Midia":    "Tipo",
-        "impressions":   "Impressões",
-        "clicks":        "Cliques",
-        "budget":        "Valor Gasto (R$)",
-        "conversions":   "Conversões",
-    })
-    csv_bytes = df_csv.to_csv(
-        index=False, sep=";", decimal=",", encoding="utf-8-sig"
-    ).encode("utf-8-sig")
-
-    st.download_button(
-        label="📥 Exportar CSV",
-        data=csv_bytes,
-        file_name=f"campanhas_publya_{date.today():%Y%m%d}.csv",
-        mime="text/csv",
-        key="download_campanhas_csv",
-    )
