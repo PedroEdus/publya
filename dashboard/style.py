@@ -13,7 +13,14 @@ def aplicar_tema() -> None:
         """
         <style>
         /* ── Fonte global ───────────────────────────────────────────── */
-        *, *::before, *::after {
+        body, p, label, input, select, textarea,
+        h1, h2, h3, h4, h5, h6,
+        [data-testid="stMarkdownContainer"] *,
+        [data-testid="stCaptionContainer"] *,
+        [data-testid="stMetricLabel"] *,
+        [data-testid="stMetricValue"] *,
+        [data-testid="stSidebarContent"] label,
+        [data-testid="stSidebarContent"] p {
             font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif !important;
         }
 
@@ -60,6 +67,36 @@ def aplicar_tema() -> None:
             border-color: #3a3a3a !important;
             border-radius: 8px !important;
             font-size: 14px !important;
+        }
+
+        /* ── Botão colapsar/expandir sidebar ────────────────────────── */
+        button[data-testid="baseButton-headerNoPadding"],
+        [data-testid="stSidebarCollapseButton"] button {
+            background: #1c1c1c !important;
+            border: 1px solid #2a2a2a !important;
+            border-radius: 6px !important;
+            color: rgba(255,255,255,0.72) !important;
+        }
+        button[data-testid="baseButton-headerNoPadding"]:hover,
+        [data-testid="stSidebarCollapseButton"] button:hover {
+            background: #262626 !important;
+            color: #ffffff !important;
+        }
+        button[data-testid="baseButton-headerNoPadding"] svg,
+        [data-testid="stSidebarCollapseButton"] svg {
+            fill: rgba(255,255,255,0.72) !important;
+        }
+        /* Botão flutuante quando sidebar está colapsada */
+        [data-testid="stSidebarCollapsedControl"] {
+            background: #1c1c1c !important;
+            border: 1px solid #2a2a2a !important;
+            border-radius: 0 6px 6px 0 !important;
+        }
+        [data-testid="stSidebarCollapsedControl"] button {
+            color: rgba(255,255,255,0.72) !important;
+        }
+        [data-testid="stSidebarCollapsedControl"] svg {
+            fill: rgba(255,255,255,0.72) !important;
         }
 
         /* ── Abas ───────────────────────────────────────────────────── */
