@@ -49,6 +49,29 @@ COLUNAS_REMOVER = [
     "platform", "acr", "client_id",
 ]
 
+# Schema explícito da tabela silver — garante que colunas de data são
+# preservadas como TIMESTAMP mesmo quando todos os valores são nulos
+# (autodetect=True descarta colunas all-null, perdendo data_inicio/data_fim).
+SCHEMA_SILVER = [
+    bigquery.SchemaField("campaign_id",       "STRING"),
+    bigquery.SchemaField("campaign_name",     "STRING"),
+    bigquery.SchemaField("Tipo_Midia",        "STRING"),
+    bigquery.SchemaField("budget",            "FLOAT64"),
+    bigquery.SchemaField("impressions",       "FLOAT64"),
+    bigquery.SchemaField("clicks",            "FLOAT64"),
+    bigquery.SchemaField("reach",             "FLOAT64"),
+    bigquery.SchemaField("frequency",         "FLOAT64"),
+    bigquery.SchemaField("conversions",       "FLOAT64"),
+    bigquery.SchemaField("videoStarts",       "FLOAT64"),
+    bigquery.SchemaField("videoCompletions",  "FLOAT64"),
+    bigquery.SchemaField("audioStarts",       "FLOAT64"),
+    bigquery.SchemaField("audioCompletions",  "FLOAT64"),
+    bigquery.SchemaField("data_inicio",       "TIMESTAMP"),
+    bigquery.SchemaField("data_fim",          "TIMESTAMP"),
+    bigquery.SchemaField("data_carga",        "TIMESTAMP"),
+    bigquery.SchemaField("origem_fonte",      "STRING"),
+]
+
 client = bigquery.Client(project=PROJECT_ID)
 
 
@@ -215,9 +238,19 @@ def garantir_dataset(dataset_id: str, location: str = "US") -> None:
     print(f"  Dataset pronto: {dataset_id}")
 
 
-def carregar_bigquery(df: pd.DataFrame, dataset_id: str, table_id: str, modo: str = "WRITE_TRUNCATE") -> None:
+def carregar_bigquery(
+    df: pd.DataFrame,
+    dataset_id: str,
+    table_id: str,
+    modo: str = "WRITE_TRUNCATE",
+    schema: list | None = None,
+) -> None:
     table_full = f"{PROJECT_ID}.{dataset_id}.{table_id}"
-    job_config = bigquery.LoadJobConfig(write_disposition=modo, autodetect=True)
+    job_config = bigquery.LoadJobConfig(
+        write_disposition=modo,
+        schema=schema if schema else None,
+        autodetect=schema is None,   # autodetect só quando schema não é fornecido
+    )
     job = client.load_table_from_dataframe(df, table_full, job_config=job_config)
     job.result()
     print(f"  Carga concluída: {table_full} ({len(df)} linhas)")
@@ -236,7 +269,7 @@ def carregar_com_staging(df: pd.DataFrame, dataset_id: str, table_id: str) -> No
     staging_id = f"{table_id}_staging"
 
     print(f"  Carregando staging ({staging_id})...")
-    carregar_bigquery(df, dataset_id, staging_id, modo="WRITE_TRUNCATE")
+    carregar_bigquery(df, dataset_id, staging_id, modo="WRITE_TRUNCATE", schema=SCHEMA_SILVER)
 
     # Colunas fixas do schema silver — INSERT explícito evita falhas por
     # divergência de contagem entre staging e tabela final.
@@ -286,7 +319,7 @@ def carregar_com_staging(df: pd.DataFrame, dataset_id: str, table_id: str) -> No
         )) or "not found" in err.lower()
         if schema_mismatch:
             print(f"  Schema divergente ({err[:120]}) — recriando tabela com WRITE_TRUNCATE...")
-            carregar_bigquery(df, dataset_id, table_id, modo="WRITE_TRUNCATE")
+            carregar_bigquery(df, dataset_id, table_id, modo="WRITE_TRUNCATE", schema=SCHEMA_SILVER)
             print(f"  Tabela recriada com novo schema: {table_id}")
         else:
             raise
