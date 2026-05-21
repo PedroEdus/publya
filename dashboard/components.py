@@ -336,7 +336,8 @@ def _grafico_barras_paginado(
     st.session_state[key] = page
 
     campanhas_pag = campanhas_ord[page * POR_PAGINA:(page + 1) * POR_PAGINA]
-    max_val = totais.max() or 1
+    _max = totais.max()
+    max_val = 1 if pd.isna(_max) or _max == 0 else _max
 
     rows_html = ""
     for camp in campanhas_pag:
