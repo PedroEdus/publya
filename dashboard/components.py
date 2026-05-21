@@ -487,11 +487,11 @@ def tabela_resumo(df: pd.DataFrame) -> None:
     for col in resumo.columns[1:]:
         resumo[col] = pd.to_numeric(resumo[col], errors="coerce")
 
-    resumo["CTR (%)"]  = (resumo["Cliques"] / resumo["Impressões"].replace(0, pd.NA) * 100).round(2)
-    resumo["VCR (%)"]  = (resumo["Video_Completions"] / resumo["Video_Starts"].replace(0, pd.NA) * 100).round(2)
-    resumo["ACR (%)"]  = (resumo["Audio_Completions"] / resumo["Audio_Starts"].replace(0, pd.NA) * 100).round(2)
-    resumo["CPM (R$)"] = (resumo["Valor_Gasto"] / resumo["Impressões"].replace(0, pd.NA) * 1000).round(2)
-    resumo["CPC (R$)"] = (resumo["Valor_Gasto"] / resumo["Cliques"].replace(0, pd.NA)).round(2)
+    resumo["CTR (%)"]  = (resumo["Cliques"] / resumo["Impressões"].replace(0, float("nan")) * 100).round(2)
+    resumo["VCR (%)"]  = (resumo["Video_Completions"] / resumo["Video_Starts"].replace(0, float("nan")) * 100).round(2)
+    resumo["ACR (%)"]  = (resumo["Audio_Completions"] / resumo["Audio_Starts"].replace(0, float("nan")) * 100).round(2)
+    resumo["CPM (R$)"] = (resumo["Valor_Gasto"] / resumo["Impressões"].replace(0, float("nan")) * 1000).round(2)
+    resumo["CPC (R$)"] = (resumo["Valor_Gasto"] / resumo["Cliques"].replace(0, float("nan"))).round(2)
 
     header = (
         "<tr>"
