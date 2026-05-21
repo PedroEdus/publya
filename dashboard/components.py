@@ -483,6 +483,10 @@ def tabela_resumo(df: pd.DataFrame) -> None:
     total_row = pd.DataFrame([["TOTAL"] + total.tolist()], columns=resumo.columns)
     resumo = pd.concat([resumo, total_row], ignore_index=True)
 
+    # concat mistura str + números → dtype object; forçar numérico antes de calcular
+    for col in resumo.columns[1:]:
+        resumo[col] = pd.to_numeric(resumo[col], errors="coerce")
+
     resumo["CTR (%)"]  = (resumo["Cliques"] / resumo["Impressões"].replace(0, pd.NA) * 100).round(2)
     resumo["VCR (%)"]  = (resumo["Video_Completions"] / resumo["Video_Starts"].replace(0, pd.NA) * 100).round(2)
     resumo["ACR (%)"]  = (resumo["Audio_Completions"] / resumo["Audio_Starts"].replace(0, pd.NA) * 100).round(2)
